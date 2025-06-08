@@ -1,6 +1,6 @@
 # streamlit_app.py
 import streamlit as st
-from streamlit_drawable_canvas  import st_canvas
+from streamlit_drawable_canvas import st_canvas
 import torch
 import numpy as np
 import cv2
@@ -11,6 +11,7 @@ from torchvision import transforms
 import editdistance
 import matplotlib.pyplot as plt
 import io
+import tempfile
 
 # Инициализация модели
 @st.cache_resource
@@ -35,11 +36,9 @@ def predict_image(model, img_pil):
         decoded = ctc_greedy_decode(pred_idxs, idx2char)
     return decoded[0]
 
-def process_uploaded_image(uploaded_file, visualize=False):
-    with open("temp_image.png", "wb") as f:
-        f.write(uploaded_file.getbuffer())
-    original, word_boxes = segment_text("temp_image.png")
-    image = cv2.imread("temp_image.png", cv2.IMREAD_GRAYSCALE)
+def process_image_from_path(image_path, visualize=False):
+    original, word_boxes = segment_text(image_path)
+    image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
     results = []
 
     vis = cv2.cvtColor(image.copy(), cv2.COLOR_GRAY2BGR) if visualize else None
@@ -67,13 +66,12 @@ st.title("Распознавание рукописного текста (рус
 
 option = st.radio("Выберите режим ввода:", ["Нарисовать текст", "Загрузить изображение"])
 
-
 if option == "Нарисовать текст":
     canvas_result = st_canvas(
-        fill_color="black",
-        stroke_width=4,
-        stroke_color="white",
-        background_color="black",
+        fill_color="white",
+        stroke_width=3,
+        stroke_color="black",
+        background_color="white",
         height=150,
         width=500,
         drawing_mode="freedraw",
@@ -81,10 +79,16 @@ if option == "Нарисовать текст":
     )
     if canvas_result.image_data is not None:
         img_data = canvas_result.image_data[:, :, 0].astype(np.uint8)
-        img_pil = Image.fromarray(img_data).convert("L").resize((512, 64))
+        img_pil = Image.fromarray(img_data).convert("L")
+
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_file:
+            tmp_path = tmp_file.name
+            img_pil.save(tmp_path)
+
+        show_boxes = st.checkbox("Показать боксы слов на изображении")
 
         if st.button("Распознать текст"):
-            st.session_state.canvas_prediction = predict_image(model, img_pil)
+            st.session_state.canvas_prediction = process_image_from_path(tmp_path, visualize=show_boxes)
 
         if "canvas_prediction" in st.session_state:
             prediction = st.session_state.canvas_prediction
@@ -101,8 +105,12 @@ elif option == "Загрузить изображение":
     if uploaded_file is not None:
         st.image(uploaded_file, caption="Загруженное изображение", use_container_width=True)
 
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_file:
+            tmp_file.write(uploaded_file.read())
+            tmp_path = tmp_file.name
+
         if st.button("Распознать текст на изображении"):
-            st.session_state.image_prediction = process_uploaded_image(uploaded_file, visualize=show_boxes)
+            st.session_state.image_prediction = process_image_from_path(tmp_path, visualize=show_boxes)
 
         if "image_prediction" in st.session_state:
             final_text = st.session_state.image_prediction
