@@ -67,27 +67,29 @@ st.title("Распознавание рукописного текста (рус
 
 option = st.radio("Выберите режим ввода:", ["Нарисовать текст", "Загрузить изображение"])
 
+
 if option == "Нарисовать текст":
     canvas_result = st_canvas(
-        fill_color="white",
+        fill_color="black",
         stroke_width=4,
-        stroke_color="black",
-        background_color="white",
+        stroke_color="white",
+        background_color="black",
         height=150,
         width=500,
         drawing_mode="freedraw",
         key="canvas_key",
-        # st_canvas does not natively support icon color customization,
-        # but you can override icon colors with custom CSS:
     )
-
     if canvas_result.image_data is not None:
         img_data = canvas_result.image_data[:, :, 0].astype(np.uint8)
         img_pil = Image.fromarray(img_data).convert("L").resize((512, 64))
+
         if st.button("Распознать текст"):
-            prediction = predict_image(model, img_pil)
+            st.session_state.canvas_prediction = predict_image(model, img_pil)
+
+        if "canvas_prediction" in st.session_state:
+            prediction = st.session_state.canvas_prediction
             st.success(f"Распознанный текст: {prediction}")
-            gt_text = st.text_input("Введите правильный текст (для оценки качества)")
+            gt_text = st.text_input("Введите правильный текст (для оценки качества)", key="gt_canvas")
             if gt_text:
                 cer = editdistance.eval(prediction, gt_text) / max(len(gt_text), 1)
                 st.metric("CER (ошибка по символам)", f"{cer:.4f}")
@@ -95,12 +97,17 @@ if option == "Нарисовать текст":
 elif option == "Загрузить изображение":
     uploaded_file = st.file_uploader("Загрузите изображение PNG/JPEG", type=["png", "jpg", "jpeg"])
     show_boxes = st.checkbox("Показать боксы слов на изображении")
+
     if uploaded_file is not None:
         st.image(uploaded_file, caption="Загруженное изображение", use_container_width=True)
+
         if st.button("Распознать текст на изображении"):
-            final_text = process_uploaded_image(uploaded_file, visualize=show_boxes)
+            st.session_state.image_prediction = process_uploaded_image(uploaded_file, visualize=show_boxes)
+
+        if "image_prediction" in st.session_state:
+            final_text = st.session_state.image_prediction
             st.success(f"Распознанный текст: {final_text}")
-            gt_text = st.text_input("Введите правильный текст (для оценки качества)")
+            gt_text = st.text_input("Введите правильный текст (для оценки качества)", key="gt_image")
             if gt_text:
                 cer = editdistance.eval(final_text, gt_text) / max(len(gt_text), 1)
                 st.metric("CER (ошибка по символам)", f"{cer:.4f}")
