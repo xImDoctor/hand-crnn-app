@@ -96,7 +96,7 @@ elif option == "Загрузить изображение":
     uploaded_file = st.file_uploader("Загрузите изображение PNG/JPEG", type=["png", "jpg", "jpeg"])
     show_boxes = st.checkbox("Показать боксы слов на изображении")
     if uploaded_file is not None:
-        st.image(uploaded_file, caption="Загруженное изображение", use_container_width==True)
+        st.image(uploaded_file, caption="Загруженное изображение", use_container_width=True)
         if st.button("Распознать текст на изображении"):
             final_text = process_uploaded_image(uploaded_file, visualize=show_boxes)
             st.success(f"Распознанный текст: {final_text}")
