@@ -102,8 +102,20 @@ def find_words_in_line(binary, line_box, distance_threshold=15):
             main_elements[best_idx] = [new_left, new_top, new_right - new_left, new_bottom - new_top]
 
     final_words = [(x + bx, y + by, bw, bh) for bx, by, bw, bh in main_elements]
-    final_words = sorted(final_words, key=lambda b: b[0])
-    return final_words
+    # Добавим паддинг
+    pad = 5
+    h_img, w_img = binary.shape
+    padded_words = []
+    for (x, y, w, h) in final_words:
+        x1 = max(x - pad, 0)
+        y1 = max(y - pad, 0)
+        x2 = min(x + w + pad, w_img)
+        y2 = min(y + h + pad, h_img)
+        padded_words.append((x1, y1, x2 - x1, y2 - y1))
+
+    padded_words = sorted(padded_words, key=lambda b: b[0])
+    return padded_words
+
 
 def segment_text(image_path):
     original, binary = preprocess_image(image_path)
