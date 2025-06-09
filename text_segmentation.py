@@ -1,4 +1,4 @@
-# text_segmentation.py
+# improved_text_segmentation.py
 import cv2
 import numpy as np
 from sklearn.cluster import DBSCAN
@@ -35,15 +35,6 @@ def find_text_lines_by_clustering(binary):
 
     return sorted(lines, key=lambda b: b[1])
 
-def is_small_punctuation(box, avg_char_width, avg_char_height):
-    x, y, w, h = box
-    area = w * h
-    is_very_small = w <= 6 or h <= 6 or area <= 50
-    is_thin = w < avg_char_width * 0.25
-    is_short = h < avg_char_height * 0.4
-    is_tiny_area = area < avg_char_width * avg_char_height * 0.15
-    return is_very_small or (is_thin and is_short) or is_tiny_area
-
 def calculate_char_stats(boxes):
     if not boxes:
         return 10, 15
@@ -55,70 +46,223 @@ def calculate_char_stats(boxes):
     avg_height = np.mean(heights[start_idx:end_idx]) if end_idx > start_idx else np.mean(heights)
     return avg_width, avg_height
 
-def find_words_in_line(binary, line_box, distance_threshold=15):
+def merge_overlapping_boxes(boxes):
+    """Объединяет перекрывающиеся или близко расположенные боксы"""
+    if not boxes:
+        return []
+    
+    boxes = sorted(boxes, key=lambda x: x[0])  # Сортируем по x
+    merged = [list(boxes[0])]
+    
+    for current in boxes[1:]:
+        last = merged[-1]
+        
+        # Проверяем пересечение или близость по горизонтали и вертикали
+        horizontal_overlap = (current[0] <= last[0] + last[2] + 5)  # +5 пикселей буфер
+        vertical_overlap = not (current[1] + current[3] < last[1] - 3 or 
+                               last[1] + last[3] < current[1] - 3)
+        
+        if horizontal_overlap and vertical_overlap:
+            # Объединяем боксы
+            new_x = min(last[0], current[0])
+            new_y = min(last[1], current[1])
+            new_right = max(last[0] + last[2], current[0] + current[2])
+            new_bottom = max(last[1] + last[3], current[1] + current[3])
+            merged[-1] = [new_x, new_y, new_right - new_x, new_bottom - new_y]
+        else:
+            merged.append(list(current))
+    
+    return merged
+
+def find_words_by_spacing_analysis(binary, line_box):
+    """Улучшенный алгоритм поиска слов на основе анализа расстояний"""
     x, y, w, h = line_box
     line_img = binary[y:y+h, x:x+w]
-    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (10, 1))
-    word_mask = cv2.dilate(line_img, kernel, iterations=1)
-
-    contours, _ = cv2.findContours(word_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    raw_boxes = [cv2.boundingRect(c) for c in contours]
-    if not raw_boxes:
+    
+    # Более агрессивная морфологическая обработка для соединения частей букв
+    # Используем горизонтальное соединение
+    horizontal_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 1))
+    connected = cv2.morphologyEx(line_img, cv2.MORPH_CLOSE, horizontal_kernel)
+    
+    # Вертикальное соединение для букв с разрывами
+    vertical_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 2))
+    connected = cv2.morphologyEx(connected, cv2.MORPH_CLOSE, vertical_kernel)
+    
+    # Найдем все контуры
+    contours, _ = cv2.findContours(connected, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    boxes = [cv2.boundingRect(c) for c in contours if cv2.contourArea(c) > 10]
+    
+    if not boxes:
         return []
-
-    avg_char_width, avg_char_height = calculate_char_stats(raw_boxes)
-    main_elements = []
-    small_punctuation = []
-    for bx, by, bw, bh in raw_boxes:
-        if is_small_punctuation((bx, by, bw, bh), avg_char_width, avg_char_height):
-            small_punctuation.append((bx, by, bw, bh))
+    
+    # Объединяем перекрывающиеся боксы
+    boxes = merge_overlapping_boxes(boxes)
+    
+    # Вычисляем статистики символов
+    avg_char_width, avg_char_height = calculate_char_stats(boxes)
+    
+    # Анализ расстояний между боксами для группировки в слова
+    boxes = sorted(boxes, key=lambda b: b[0])
+    words = []
+    current_word = [boxes[0]]
+    
+    for i in range(1, len(boxes)):
+        prev_box = current_word[-1]
+        curr_box = boxes[i]
+        
+        # Расстояние между концом предыдущего бокса и началом текущего
+        gap = curr_box[0] - (prev_box[0] + prev_box[2])
+        
+        # Проверяем вертикальное выравнивание
+        prev_center_y = prev_box[1] + prev_box[3] // 2
+        curr_center_y = curr_box[1] + curr_box[3] // 2
+        vertical_diff = abs(prev_center_y - curr_center_y)
+        
+        # Адаптивный порог для разделения слов
+        # Учитываем размер символов и их высоту
+        char_spacing_threshold = max(avg_char_width * 0.4, 8)  # Минимум 8 пикселей
+        word_spacing_threshold = max(avg_char_width * 0.6, 10)  # Минимум 15 пикселей
+        height_threshold = avg_char_height * 0.3
+        
+        # Условия для объединения в одно слово:
+        # 1. Небольшой разрыв (меньше порога для разделения слов)
+        # 2. Хорошее вертикальное выравнивание
+        # 3. Или очень маленький разрыв (части одной буквы)
+        should_merge = (
+            (gap <= word_spacing_threshold and vertical_diff <= height_threshold) or
+            gap <= char_spacing_threshold or
+            gap < 0  # Перекрывающиеся боксы
+        )
+        
+        if should_merge:
+            current_word.append(curr_box)
         else:
-            main_elements.append([bx, by, bw, bh])
+            # Завершаем текущее слово и начинаем новое
+            if current_word:
+                words.append(current_word)
+            current_word = [curr_box]
+    
+    # Добавляем последнее слово
+    if current_word:
+        words.append(current_word)
+    
+    # Создаем финальные боксы для слов
+    final_words = []
+    for word_boxes in words:
+        if not word_boxes:
+            continue
+            
+        # Объединяем все боксы слова в один
+        min_x = min(box[0] for box in word_boxes)
+        min_y = min(box[1] for box in word_boxes)
+        max_x = max(box[0] + box[2] for box in word_boxes)
+        max_y = max(box[1] + box[3] for box in word_boxes)
+        
+        # Добавляем небольшой паддинг
+        pad = 3
+        h_img, w_img = binary.shape
+        
+        x1 = max(min_x - pad, 0)
+        y1 = max(min_y - pad, 0)
+        x2 = min(max_x + pad, w_img)
+        y2 = min(max_y + pad, h_img)
+        
+        # Преобразуем в глобальные координаты
+        global_x = x + x1
+        global_y = y + y1
+        width = x2 - x1
+        height = y2 - y1
+        
+        final_words.append((global_x, global_y, width, height))
+    
+    return sorted(final_words, key=lambda b: b[0])
 
-    for px, py, pw, ph in small_punctuation:
-        p_center_x = px + pw // 2
-        p_center_y = py + ph // 2
-        best_distance = float('inf')
-        best_idx = -1
-        for i, (mx, my, mw, mh) in enumerate(main_elements):
-            m_center_y = my + mh // 2
-            if abs(p_center_y - m_center_y) > avg_char_height * 0.4:
-                continue
-            if p_center_x < mx:
-                distance = mx - (px + pw)
-            elif p_center_x > mx + mw:
-                distance = px - (mx + mw)
+def post_process_words(word_boxes, avg_char_width):
+    """Дополнительная постобработка для объединения близких слов"""
+    if len(word_boxes) <= 1:
+        return word_boxes
+    
+    processed = []
+    current_group = [word_boxes[0]]
+    
+    for i in range(1, len(word_boxes)):
+        prev_word = current_group[-1]
+        curr_word = word_boxes[i]
+        
+        # Расстояние между словами
+        gap = curr_word[0] - (prev_word[0] + prev_word[2])
+        
+        # Если слова очень близко (возможно, разорванное слово)
+        if gap <= avg_char_width * 0.8:
+            current_group.append(curr_word)
+        else:
+            # Завершаем группу и начинаем новую
+            if len(current_group) > 1:
+                # Объединяем группу в одно слово
+                min_x = min(w[0] for w in current_group)
+                min_y = min(w[1] for w in current_group)
+                max_x = max(w[0] + w[2] for w in current_group)
+                max_y = max(w[1] + w[3] for w in current_group)
+                processed.append((min_x, min_y, max_x - min_x, max_y - min_y))
             else:
-                distance = 0
-            if distance <= avg_char_width * 0.3 and distance < best_distance:
-                best_distance = distance
-                best_idx = i
-        if best_idx >= 0:
-            mx, my, mw, mh = main_elements[best_idx]
-            new_left = min(mx, px)
-            new_top = min(my, py)
-            new_right = max(mx + mw, px + pw)
-            new_bottom = max(my + mh, py + ph)
-            main_elements[best_idx] = [new_left, new_top, new_right - new_left, new_bottom - new_top]
-
-    final_words = [(x + bx, y + by, bw, bh) for bx, by, bw, bh in main_elements]
-    # Добавим паддинг
-    pad = 5
-    h_img, w_img = binary.shape
-    padded_words = []
-    for (x, y, w, h) in final_words:
-        x1 = max(x - pad, 0)
-        y1 = max(y - pad, 0)
-        x2 = min(x + w + pad, w_img)
-        y2 = min(y + h + pad, h_img)
-        padded_words.append((x1, y1, x2 - x1, y2 - y1))
-
-    padded_words = sorted(padded_words, key=lambda b: b[0])
-    return padded_words
-
+                processed.extend(current_group)
+            current_group = [curr_word]
+    
+    # Обрабатываем последнюю группу
+    if len(current_group) > 1:
+        min_x = min(w[0] for w in current_group)
+        min_y = min(w[1] for w in current_group)
+        max_x = max(w[0] + w[2] for w in current_group)
+        max_y = max(w[1] + w[3] for w in current_group)
+        processed.append((min_x, min_y, max_x - min_x, max_y - min_y))
+    else:
+        processed.extend(current_group)
+    
+    return processed
 
 def segment_text(image_path):
+    """Главная функция сегментации с улучшенным алгоритмом"""
     original, binary = preprocess_image(image_path)
     line_boxes = find_text_lines_by_clustering(binary)
-    all_word_boxes = [find_words_in_line(binary, box) for box in line_boxes]
+    
+    # Вычисляем средние размеры символов для всего изображения
+    all_contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    all_boxes = [cv2.boundingRect(c) for c in all_contours if cv2.contourArea(c) > 10]
+    avg_char_width, avg_char_height = calculate_char_stats(all_boxes)
+    
+    all_word_boxes = []
+    for line_box in line_boxes:
+        words = find_words_by_spacing_analysis(binary, line_box)
+        # Применяем постобработку для каждой линии
+        words = post_process_words(words, avg_char_width)
+        all_word_boxes.append(words)
+    
     return original, all_word_boxes
+
+# Дополнительная функция для визуализации результатов
+def visualize_segmentation(image_path, save_path=None):
+    """Визуализация результатов сегментации"""
+    original, word_boxes = segment_text(image_path)
+    
+    # Создаем цветное изображение для визуализации
+    if len(original.shape) == 2:
+        vis_img = cv2.cvtColor(original, cv2.COLOR_GRAY2BGR)
+    else:
+        vis_img = original.copy()
+    
+    # Рисуем боксы разными цветами для каждой линии
+    colors = [(0, 255, 0), (255, 0, 0), (0, 0, 255), (255, 255, 0), 
+              (255, 0, 255), (0, 255, 255), (128, 0, 128), (255, 165, 0)]
+    
+    for line_idx, line_words in enumerate(word_boxes):
+        color = colors[line_idx % len(colors)]
+        for x, y, w, h in line_words:
+            cv2.rectangle(vis_img, (x, y), (x + w, y + h), color, 2)
+            # Добавляем номер слова
+            cv2.putText(vis_img, f'L{line_idx+1}', (x, y-5), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
+    
+    if save_path:
+        cv2.imwrite(save_path, vis_img)
+    
+    return vis_img
