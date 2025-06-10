@@ -62,7 +62,8 @@ def process_image_from_path(image_path, visualize=False):
 
     return " ".join(results)
 
-st.title("Распознавание рукописного текста (русский язык)")
+st.title("Распознавание рукописного текста")
+st.write("*(на русском языке)*")
 
 option = st.radio("Выберите режим ввода:", ["Нарисовать текст", "Загрузить изображение"])
 
