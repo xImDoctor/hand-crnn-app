@@ -47,12 +47,43 @@ def predict_image(model, img_pil):
     return decoded[0]
 
 def process_image_from_path(image_path, visualize=False):
+    """
+    Сегментация текста и распознавание слов. 
+    Если сегментация не нашла ни одного слова, распознаём всё изображение целиком.
+    """
+    # Сегментация
     original, word_boxes = segment_text(image_path)
+    # Прочитаем grayscale-образ для распознавания
     image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
     results = []
 
+    # Подготовка для визуализации: конвертируем в цветной, если нужно рисовать боксы
     vis = cv2.cvtColor(image.copy(), cv2.COLOR_GRAY2BGR) if visualize else None
 
+    # имеются ли вообще какие-либо боксы слов:
+    has_any_box = False
+    for line in word_boxes:
+        if line:  # непустой список
+            has_any_box = True
+            break
+    if not has_any_box:
+        # Нет сегментированных слов — делаем единое предсказание на всё изображение
+        # Конвертируем original (np.ndarray) в PIL
+        pil_full = Image.fromarray(image).convert("L")
+        pred_full = predict_image(model, pil_full)
+        if visualize:
+            st.warning("Сегментация не нашла области текста. Выполняем распознавание всего изображения.")
+            # Показать само изображение без боксов, чтобы пользователь понял причину
+            fig, ax = plt.subplots(figsize=(8, 6))
+            # если оригинал цветной, можно показать как есть, но у нас grayscale:
+            ax.imshow(image, cmap='gray')
+            ax.axis("off")
+            st.pyplot(fig)
+        # Возвращаем единый результат
+        return pred_full
+
+
+    # Обычная логика: прогоняем по найденным словам
     for line in word_boxes:
         for (x, y, w, h) in line:
             word_img = image[y:y+h, x:x+w]
