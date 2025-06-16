@@ -13,7 +13,14 @@ import matplotlib.pyplot as plt
 import io
 import tempfile
 
-st.title("💻 Hand-CRNN | Recognize Rus Text")
+
+# Установка конфигурации страницы Streamlit
+st.set_page_config(
+    page_title="Распознавание рукописного текста | Hand-CRNN", 
+    page_icon="✍️",
+    initial_sidebar_state="auto",
+)
+
 
 st.sidebar.title("Настройки модели")
 model_name = st.sidebar.selectbox(
