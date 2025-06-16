@@ -159,7 +159,7 @@ def find_words_by_spacing_analysis(binary, line_box):
         max_y = max(box[1] + box[3] for box in word_boxes)
         
         # Добавляем небольшой паддинг
-        pad = 3
+        pad = 6
         h_img, w_img = binary.shape
         
         x1 = max(min_x - pad, 0)
