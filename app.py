@@ -13,25 +13,29 @@ import matplotlib.pyplot as plt
 import io
 import tempfile
 
-
 st.sidebar.title("Настройки модели")
 model_name = st.sidebar.selectbox(
     "Выберите модель",
-    ("resnet-word-trained-ver2", "resnet-word-trained-ver3")
+    ("resnet-word-trained-ver3", "resnet-word-trained-ver2")
 )
 
-# Инициализация модели
 @st.cache_resource
-def load_model():
-
-    model_path = f"model/{model_name}.pth"
-
+def load_model(name: str):
+    model_path = f"model/{name}.pth"
+    try:
+        state = torch.load(model_path, map_location="cpu")
+    except FileNotFoundError:
+        st.error(f"Файл модели не найден: {model_path}")
+        raise
     model = CRNN(num_classes=len(VOCAB))
-    model.load_state_dict(torch.load(model_path, map_location="cpu"))
+    model.load_state_dict(state)
     model.eval()
     return model
 
-model = load_model()
+# Здесь вызываем с аргументом:
+model = load_model(model_name)
+st.sidebar.write(f"Загружена модель:")
+st.sidebar.write(f"**{model_name}**")
 
 transform = transforms.Compose([
     transforms.ToTensor(),
