@@ -13,6 +13,8 @@ import matplotlib.pyplot as plt
 import io
 import tempfile
 
+st.title("💻 Hand-CRNN | Recognize Rus Text")
+
 st.sidebar.title("Настройки модели")
 model_name = st.sidebar.selectbox(
     "Выберите модель",
