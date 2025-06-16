@@ -26,7 +26,7 @@ st.set_page_config(
 st.sidebar.title("Настройки модели")
 model_name = st.sidebar.selectbox(
     "Выберите модель", 
-    ("resnet-word-trained-ver3", "resnet-word-trained-ver2", "model-finetuned")
+    ("resnet-word-trained-ver3", "resnet-word-trained-ver2", "model_finetuned")
 )
 
 @st.cache_resource
