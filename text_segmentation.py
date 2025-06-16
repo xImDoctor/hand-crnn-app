@@ -120,8 +120,8 @@ def find_words_by_spacing_analysis(binary, line_box):
         
         # Адаптивный порог для разделения слов
         # Учитываем размер символов и их высоту
-        char_spacing_threshold = max(avg_char_width * 0.4, 8)  # Минимум 8 пикселей
-        word_spacing_threshold = max(avg_char_width * 0.6, 10)  # Минимум 15 пикселей
+        char_spacing_threshold = max(avg_char_width * 0.1, 2)  # Минимум 8 пикселей
+        word_spacing_threshold = max(avg_char_width * 0.2, 4)  # Минимум 15 пикселей
         height_threshold = avg_char_height * 0.3
         
         # Условия для объединения в одно слово:
