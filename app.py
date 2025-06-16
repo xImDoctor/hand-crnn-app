@@ -13,11 +13,21 @@ import matplotlib.pyplot as plt
 import io
 import tempfile
 
+
+st.sidebar.title("Настройки модели")
+model_name = st.sidebar.selectbox(
+    "Выберите модель",
+    ("resnet-word-trained-ver2", "resnet-word-trained-ver3")
+)
+
 # Инициализация модели
 @st.cache_resource
 def load_model():
+
+    model_path = f"model/{model_name}.pth"
+
     model = CRNN(num_classes=len(VOCAB))
-    model.load_state_dict(torch.load("model/resnet-word-trained-ver2.pth", map_location="cpu"))
+    model.load_state_dict(torch.load(model_path, map_location="cpu"))
     model.eval()
     return model
 
